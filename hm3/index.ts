@@ -48,7 +48,13 @@ class BCD {
     return str;
   }
   at(index: number) {
-    let localIndex = this.#numLenth - index - 1;
+    let localIndex: number;
+
+    if (index >= 0) {
+      localIndex = this.#numLenth - index - 1;
+    } else {
+      localIndex = -index - 1;
+    }
     const byteIndex = Math.floor(localIndex / 2);
     const byte = this.#BCDNumArr.at(byteIndex);
     if (byte === undefined) return undefined;
@@ -78,3 +84,4 @@ console.log(bcd.toNumber());
 console.log(bcd.at(0));
 console.log(bcd.at(1));
 console.log(bcd.at(2));
+console.log(bcd.at(-1));
