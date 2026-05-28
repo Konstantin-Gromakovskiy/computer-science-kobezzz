@@ -52,7 +52,8 @@ class StackPointer implements StackPointerI {
 
 class HeapPointer extends StackPointer {
   free() {
-    if (this.metadata.value < 0) throw new Error("❌ Error: double free detected");
+    if (this.metadata.value < 0)
+      throw new Error("❌ Error: double free detected");
 
     this.metadata.value = -this.metadata.value;
   }
