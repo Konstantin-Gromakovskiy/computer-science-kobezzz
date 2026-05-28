@@ -13,10 +13,26 @@ interface MemoryI {
   alloc(size: number): HeapPointerI;
 }
 
+class BlockMetadata {
+  view: DataView;
+
+  constructor(buffer: ArrayBufferLike, byteOffset: number) {
+    this.view = new DataView(buffer, byteOffset, 4);
+  }
+
+  get value(): number {
+    return this.view.getInt32(0);
+  }
+
+  set value(value: number) {
+    this.view.setInt32(0, value);
+  }
+}
+
 class StackPointer implements StackPointerI {
-  metadata: Int32Array;
+  metadata: BlockMetadata;
   bytes: Uint8Array;
-  constructor(payload: Uint8Array, metadata: Int32Array) {
+  constructor(payload: Uint8Array, metadata: BlockMetadata) {
     this.bytes = payload;
     this.metadata = metadata;
   }
@@ -26,7 +42,7 @@ class StackPointer implements StackPointerI {
   change(value: ArrayBuffer): void {
     const valueBytes = new Uint8Array(value);
     const valueByteLenth = valueBytes.byteLength;
-    if (valueByteLenth > this.metadata[0])
+    if (valueByteLenth > this.bytes.byteLength)
       throw new Error("value bigger then memory item");
 
     this.bytes.fill(0);
@@ -36,9 +52,9 @@ class StackPointer implements StackPointerI {
 
 class HeapPointer extends StackPointer {
   free() {
-    if (this.metadata[0] < 0) throw new Error("❌ Error: double free detected");
+    if (this.metadata.value < 0) throw new Error("❌ Error: double free detected");
 
-    this.metadata[0] = -this.metadata[0];
+    this.metadata.value = -this.metadata.value;
   }
 }
 
@@ -78,12 +94,11 @@ class Memory {
       this.stackCursor - nextCursorOffset,
       this.stackCursor - this.#metaDataByteLenth,
     );
-    const metadata = new Int32Array(
+    const metadata = new BlockMetadata(
       this.buffer,
       payload.byteOffset + payload.byteLength,
-      1,
     );
-    metadata[0] = valueByteLenth;
+    metadata.value = valueByteLenth;
 
     return new StackPointer(payload, metadata);
   }
@@ -95,6 +110,10 @@ class Memory {
     this.stackCursor -= lastItemLenth + this.#metaDataByteLenth;
   }
   alloc(size: number): HeapPointerI {
+    if (!Number.isInteger(size) || size <= 0) {
+      throw new RangeError("Allocation size must be a positive integer");
+    }
+
     return searchFreeMemory(this.heap, size, 0);
   }
 }
@@ -104,10 +123,16 @@ function searchFreeMemory(
   seartchebleSize: number,
   offset: number,
 ) {
-  if (heapBytes.byteLength < offset)
+  if (offset + 4 > heapBytes.byteLength)
     throw new Error("free memory is not founded");
-  const bytesView = new DataView(heapBytes.buffer, heapBytes.byteOffset);
+  const bytesView = new DataView(
+    heapBytes.buffer,
+    heapBytes.byteOffset,
+    heapBytes.byteLength,
+  );
   const blockSize = bytesView.getInt32(offset);
+  if (blockSize === 0) throw new Error("free memory is not founded");
+
   const isFree = blockSize < 0;
 
   if (isFree && Math.abs(blockSize) >= seartchebleSize) {
@@ -116,17 +141,20 @@ function searchFreeMemory(
       heapBytes.byteOffset,
       heapBytes.byteLength,
     );
-    blockView.setInt32(offset, seartchebleSize);
-
-    const nextHeaderOffset = offset + 4 + seartchebleSize;
     const freePayloadSize = Math.abs(blockSize);
     const remainingPayloadSize = freePayloadSize - seartchebleSize - 4;
+    const allocatedPayloadSize =
+      remainingPayloadSize > 0 ? seartchebleSize : freePayloadSize;
+
+    blockView.setInt32(offset, allocatedPayloadSize);
+
+    const nextHeaderOffset = offset + 4 + allocatedPayloadSize;
     if (remainingPayloadSize > 0) {
       blockView.setInt32(nextHeaderOffset, -remainingPayloadSize);
     }
     return new HeapPointer(
       heapBytes.subarray(offset + 4, offset + 4 + seartchebleSize),
-      new Int32Array(heapBytes.buffer, heapBytes.byteOffset + offset, 1),
+      new BlockMetadata(heapBytes.buffer, heapBytes.byteOffset + offset),
     );
   }
   return searchFreeMemory(
