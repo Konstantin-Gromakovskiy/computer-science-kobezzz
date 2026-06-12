@@ -1,3 +1,5 @@
+export {};
+
 type RGBAValue = [number, number, number, number];
 
 type ViewConstructor<TValue, TView> = {
